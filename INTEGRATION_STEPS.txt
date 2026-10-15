@@ -1,0 +1,11 @@
+1. Extract the folder `research_gap_upgrade` from this ZIP into your existing capstone_project_updated root.
+2. Install optional statistical test dependency:
+   py -m pip install pandas scipy
+3. Test the dynamic workload generator:
+   py -c "from research_gap_upgrade.dynamic_workload import generate_dynamic_tasks; print(generate_dynamic_tasks(5, seed=2026))"
+4. Add the advanced metrics only after your simulator records actual arrival/completion/deadline/tenant/data fields.
+   The existing Task model does not automatically provide these fields; do not fabricate completion times.
+5. Analyze the existing experiment CSV:
+   py -m research_gap_upgrade.statistical_analysis results/scalability_results_all.csv --metric makespan --baseline FCFS
+   If your results file has a different name, replace the path.
+6. Outputs are written to results/research_gap/.
