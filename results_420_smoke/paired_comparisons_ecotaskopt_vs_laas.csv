@@ -1,0 +1,7 @@
+tasks,vms,task_distribution,metric,mean_eco_minus_laas,std_paired_delta,eco_better_count,ties_count,eco_worse_count
+420,3,uniform,makespan,-0.3573333333,0.0000000000,1,0,0
+420,3,uniform,algorithm_runtime_sec,0.0668595000,0.0000000000,0,0,1
+420,3,uniform,avg_execution_time,0.0004646825,0.0000000000,0,0,1
+420,3,uniform,cost,-0.0019516667,0.0000000000,1,0,0
+420,3,uniform,energy_joules_est,-69.1849999998,0.0000000000,1,0,0
+420,3,uniform,utilization_pct,0.0318062768,0.0000000000,1,0,0

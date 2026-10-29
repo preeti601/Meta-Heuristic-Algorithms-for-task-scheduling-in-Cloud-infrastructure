@@ -7,6 +7,8 @@ from main import Task, VM, schedule_tasks, calculate_metrics
 from scheduler.ga import genetic_algorithm
 from scheduler.pso import particle_swarm_optimization
 from scheduler.laas import load_aware_scheduler
+from scheduler.ecotaskopt import eco_task_opt
+from hera import hera_schedule
 
 WORKLOAD_SIZES = [50, 100, 500]
 TRIALS = 30
@@ -16,7 +18,10 @@ VMS = [
     VM(2, 3000, 0.08, 90, 180),
     VM(3, 1500, 0.03, 50, 100),
 ]
-ALGORITHMS = ["FCFS", "ROUND_ROBIN", "MIN_MIN", "GENETIC ALGORITHM", "PSO", "LAAS"]
+ALGORITHMS = [
+    "FCFS", "ROUND_ROBIN", "MIN_MIN", "GENETIC ALGORITHM", "PSO", "LAAS",
+    "ECOTASKOPT", "HERA",
+]
 
 
 def generate_tasks(number_of_tasks, seed):
@@ -24,7 +29,9 @@ def generate_tasks(number_of_tasks, seed):
     return [Task(i + 1, rng.randint(5000, 30000)) for i in range(number_of_tasks)]
 
 
-def run_algorithm(name, tasks):
+def run_algorithm(name, tasks, seed=None):
+    if seed is not None:
+        random.seed(seed)
     if name in ("FCFS", "ROUND_ROBIN", "MIN_MIN"):
         return schedule_tasks(tasks, VMS, name.lower())
     if name == "GENETIC ALGORITHM":
@@ -33,16 +40,58 @@ def run_algorithm(name, tasks):
         return particle_swarm_optimization(tasks, VMS)
     if name == "LAAS":
         return load_aware_scheduler(tasks, VMS)
+    if name == "ECOTASKOPT":
+        return eco_task_opt(tasks, VMS, seed=seed, iterations=30)
+    if name == "HERA":
+        # HERA returns task->VM assignments; reconstruct the same schedule
+        # format used by the other algorithms so all reported metrics use
+        # main.calculate_metrics().
+        hera_tasks = [
+            {"id": task.task_id, "length": task.length_mi}
+            for task in tasks
+        ]
+        hera_vms = [
+            {"id": vm.vm_id, "speed": vm.mips,
+             "power": vm.max_watts, "cost_rate": vm.cost_per_second}
+            for vm in VMS
+        ]
+        # Keep HERA tractable for the 500-task workload. These settings are
+        # recorded in the report and should be held fixed for reproducibility.
+        n = len(tasks)
+        iterations = 4 if n <= 100 else 1
+        max_moves = 20 if n <= 100 else 5
+        max_swap_checks = 100 if n <= 100 else 20
+        result = hera_schedule(
+            hera_tasks, hera_vms, seed=seed,
+            iterations=iterations, max_moves=max_moves,
+            max_swap_checks=max_swap_checks
+        )
+        vm_lookup = {vm.vm_id: vm for vm in VMS}
+        task_lookup = {task.task_id: task for task in tasks}
+        availability = {vm.vm_id: 0.0 for vm in VMS}
+        records = []
+        for task_id, vm_id in result["assignment"].items():
+            task = task_lookup[task_id]
+            vm = vm_lookup[vm_id]
+            start = availability[vm_id]
+            duration = task.length_mi / vm.mips
+            finish = start + duration
+            availability[vm_id] = finish
+            records.append({
+                "task_id": task_id, "vm_id": vm_id,
+                "start_time": start, "execution_time": duration,
+                "finish_time": finish,
+                "cost": duration * vm.cost_per_second
+            })
+        return pd.DataFrame(records)
     raise ValueError(f"Unknown algorithm: {name}")
 
 
 def measure_runtime(name, tasks, seed):
     durations = []
     for repeat in range(RUNTIME_REPEATS):
-        # A distinct, reproducible seed for each algorithm/repetition.
-        random.seed(seed + repeat * 100_003)
         start = time.perf_counter()
-        run_algorithm(name, tasks)
+        run_algorithm(name, tasks, seed + repeat * 100_003)
         durations.append(time.perf_counter() - start)
     return statistics.median(durations)
 
@@ -58,8 +107,7 @@ def main():
             for algorithm_index, algorithm in enumerate(ALGORITHMS):
                 completed += 1
                 seed = size * 1_000_000 + trial * 100 + algorithm_index
-                random.seed(seed)
-                schedule = run_algorithm(algorithm, tasks)
+                schedule = run_algorithm(algorithm, tasks, seed)
                 metrics = calculate_metrics(schedule, VMS)
                 runtime = measure_runtime(algorithm, tasks, seed + 50_000_000)
                 rows.append({
